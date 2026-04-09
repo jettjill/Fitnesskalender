@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mijn Kalender 🌸</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <style>
+    :root {
+      --pink:        #F472B6;
+      --pink-light:  #FBCFE8;
+      --pink-bg:     #FDF2F8;
+      --purple:      #A78BFA;
+      --purple-light:#EDE9FE;
+      --mint:        #6EE7B7;
+      --mint-dark:   #34D399;
+      --text:        #374151;
+      --text-light:  #9CA3AF;
+      --white:       #FFFFFF;
+      --shadow:      0 4px 16px rgba(244,114,182,0.12);
+      --radius:      18px;
+      --radius-sm:   10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: 'Nunito', sans-serif;
+      background: var(--pink-bg);
+      color: var(--text);
+      min-height: 100vh;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    /* ── Loading ── */
+    .loading-screen {
+      position: fixed; inset: 0;
+      background: var(--pink-bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 1000; gap: 16px;
+    }
+    .loading-title {
+      font-size: 26px; font-weight: 900;
+      background: linear-gradient(135deg, var(--pink), var(--purple));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .loading-dots { display: flex; gap: 8px; }
+    .loading-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--pink);
+      animation: loadDot 1.2s infinite;
+    }
+    .loading-dot:nth-child(2) { animation-delay: 0.2s; background: var(--purple); }
+    .loading-dot:nth-child(3) { animation-delay: 0.4s; background: var(--mint-dark); }
+    @keyframes loadDot {
+      0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+      40%            { transform: scale(1.2); opacity: 1; }
+    }
+
+    /* ── Header ── */
+    .header {
+      background: var(--white);
+      padding: 16px 20px 0;
+      position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 2px 12px rgba(244,114,182,0.08);
+    }
+    .header-top {
+      display: flex; justify-content: flex-end;
+      align-items: center; margin-bottom: 8px;
+    }
+    .sync-status {
+      font-size: 11px; font-weight: 700;
+      padding: 5px 12px; border-radius: 20px;
+      background: #F3F4F6; color: var(--text-light);
+      transition: all 0.3s;
+    }
+    .sync-status.syncing { background: #FEF9C3; color: #D97706; }
+    .sync-status.synced  { background: #ECFDF5; color: #059669; }
+    .sync-status.error   { background: #FEF2F2; color: #DC2626; }
+
+    /* ── Countdown ── */
+    .countdown-banner {
+      background: linear-gradient(135deg, #EDE9FE, #FCE7F3);
+      border-radius: var(--radius-sm);
+      padding: 8px 14px; margin-bottom: 10px;
+      font-size: 13px; font-weight: 800;
+      color: var(--purple); text-align: center;
+    }
+    .countdown-banner:empty { display: none; }
+
+    /* ── Month tabs ── */
+    .month-tabs { display: flex; }
+    .month-tab {
+      flex: 1; padding: 12px 4px;
+      text-align: center; font-weight: 800; font-size: 14px;
+      color: var(--text-light); cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s; user-select: none;
+    }
+    .month-tab.active { color: var(--pink); border-bottom-color: var(--pink); }
+
+    /* ── Content ── */
+    .content { padding: 16px; }
+    .month-view { display: none; }
+    .month-view.active { display: block; }
+
+    /* ── Legend ── */
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin-bottom: 14px; padding: 10px 14px;
+      background: white; border-radius: var(--radius-sm);
+      font-size: 11px; font-weight: 700; color: var(--text-light);
+    }
+    .legend-item { display: flex; align-items: center; gap: 4px; }
+    .legend-dot  { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Calendar card ── */
+    .cal-card {
+      background: var(--white); border-radius: var(--radius);
+      padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow);
+    }
+    .weekday-row { display: grid; grid-template-columns: repeat(7,1fr); margin-bottom: 6px; }
+    .weekday-lbl {
+      text-align: center; font-size: 11px; font-weight: 800;
+      color: var(--text-light); padding: 4px 0;
+      text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    .cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 3px; }
+    .cal-day {
+      aspect-ratio: 1; border-radius: 10px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      cursor: pointer; background: #F3F4F6;
+      transition: transform 0.1s; position: relative;
+      padding: 2px; overflow: hidden;
+    }
+    .cal-day:active { transform: scale(0.9); }
+    .cal-day.empty  { background: transparent; cursor: default; pointer-events: none; }
+
+    /* Color coding */
+    .cal-day.day-green    { background: #D1FAE5; }
+    .cal-day.day-orange   { background: #FED7AA; }
+    .cal-day.day-red      { background: #FEE2E2; }
+    .cal-day.day-blue     { background: #DBEAFE; }
+    .cal-day.day-vacation { background: #F5F3FF; }
+    .cal-day.today {
+      background: linear-gradient(135deg, var(--pink), var(--purple)) !important;
+    }
+    .cal-day.today .day-num  { color: white !important; }
+    .cal-day.today .day-icon { color: rgba(255,255,255,0.9) !important; }
+
+    .day-num  { font-size: 13px; font-weight: 800; color: var(--text); line-height: 1; }
+    .day-icon { font-size: 9px; line-height: 1; margin-top: 2px; }
+    .day-dots { display: flex; gap: 2px; margin-top: 2px; }
+    .day-dot  { width: 4px; height: 4px; border-radius: 50%; }
+    .dot-cal    { background: var(--pink); }
+    .dot-weight { background: var(--purple); }
+    .dot-white  { background: rgba(255,255,255,0.9); }
+
+    /* ── Section title ── */
+    .section-title { font-size: 16px; font-weight: 900; color: var(--text); margin-bottom: 10px; }
+
+    /* ── Week cards ── */
+    .week-card {
+      background: var(--white); border-radius: var(--radius);
+      padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow);
+    }
+    .week-header {
+      display: flex; align-items: center;
+      justify-content: space-between; margin-bottom: 12px;
+    }
+    .week-lbl      { font-size: 13px; font-weight: 700; color: var(--text-light); }
+    .week-progress { font-size: 12px; font-weight: 700; color: var(--mint-dark); }
+    .week-nav {
+      width: 30px; height: 30px; border-radius: 50%;
+      border: none; background: var(--pink-bg);
+      font-size: 20px; line-height: 1; cursor: pointer; flex-shrink: 0;
+      color: var(--pink); font-weight: 900;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s;
+    }
+    .week-nav:hover  { background: var(--pink-light); }
+    .week-nav:disabled { opacity: 0.25; cursor: default; }
+
+    /* ── Training items ── */
+    .training-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px; border-radius: 12px;
+      margin-bottom: 8px; background: var(--pink-bg);
+      transition: background 0.4s;
+    }
+    .training-item:last-child { margin-bottom: 0; }
+    .training-item.done { background: #ECFDF5; }
+    .t-check {
+      width: 30px; height: 30px; border-radius: 50%;
+      border: 2.5px solid var(--pink-light); background: white;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; flex-shrink: 0; font-size: 14px; transition: all 0.3s;
+    }
+    .training-item.done .t-check {
+      background: var(--mint-dark); border-color: var(--mint-dark);
+      color: white; font-size: 16px;
+    }
+    .t-name {
+      flex: 1; border: none; background: transparent;
+      font-family: 'Nunito', sans-serif; font-size: 14px;
+      font-weight: 700; color: var(--text); outline: none; min-width: 0;
+    }
+    .training-item.done .t-name { text-decoration: line-through; color: var(--text-light); }
+    .t-name::placeholder { color: var(--text-light); font-weight: 600; }
+
+    /* ── Month summary ── */
+    .summary-card {
+      background: var(--white); border-radius: var(--radius);
+      padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow);
+    }
+    .summary-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 10px; margin-bottom: 12px;
+    }
+    .summary-stat {
+      background: var(--pink-bg); border-radius: var(--radius-sm);
+      padding: 12px; text-align: center;
+    }
+    .summary-stat-value { font-size: 19px; font-weight: 900; color: var(--text); line-height: 1.2; }
+    .summary-stat-label {
+      font-size: 10px; font-weight: 700; color: var(--text-light);
+      margin-top: 3px; text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    .summary-dist { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; font-weight: 700; }
+    .dist-item  { display: flex; align-items: center; gap: 5px; }
+    .dist-dot   { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Weight chart ── */
+    .chart-card {
+      background: var(--white); border-radius: var(--radius);
+      padding: 16px; margin-bottom: 24px; box-shadow: var(--shadow);
+    }
+    .chart-empty {
+      text-align: center; padding: 24px 0;
+      color: var(--text-light); font-size: 13px; font-weight: 600;
+    }
+    .chart-legend {
+      display: flex; gap: 16px; padding: 8px 2px 0;
+      font-size: 11px; font-weight: 700; color: var(--text-light);
+    }
+    .chart-legend-item { display: flex; align-items: center; gap: 5px; }
+
+    /* ── Bottom sheet ── */
+    .overlay {
+      position: fixed; inset: 0;
+      background: rgba(55,65,81,0.35);
+      z-index: 200; display: none;
+      align-items: flex-end; backdrop-filter: blur(2px);
+    }
+    .overlay.open { display: flex; }
+    .sheet {
+      background: var(--white); border-radius: 28px 28px 0 0;
+      padding: 12px 20px 48px; width: 100%;
+      animation: slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      max-height: 88vh; overflow-y: auto;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(100%); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+    .sheet-handle {
+      width: 40px; height: 4px; background: #E5E7EB;
+      border-radius: 2px; margin: 0 auto 20px;
+    }
+    .sheet-title {
+      font-size: 19px; font-weight: 900; margin-bottom: 20px;
+      background: linear-gradient(135deg, var(--pink), var(--purple));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .input-group { margin-bottom: 14px; }
+    .input-lbl {
+      font-size: 12px; font-weight: 800; color: var(--text-light);
+      margin-bottom: 6px; display: block;
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .input-field {
+      width: 100%; border: 2.5px solid var(--pink-light);
+      border-radius: 14px; padding: 14px 16px;
+      font-family: 'Nunito', sans-serif; font-size: 18px;
+      font-weight: 700; color: var(--text); outline: none;
+      transition: border-color 0.2s; background: var(--pink-bg);
+    }
+    .input-field:focus { border-color: var(--pink); background: white; }
+    .input-field.small { font-size: 15px; padding: 11px 14px; }
+
+    /* Weight trend */
+    .weight-trend {
+      font-size: 12px; font-weight: 700;
+      padding: 5px 4px 0; min-height: 20px;
+    }
+    .trend-up   { color: #EF4444; }
+    .trend-down { color: #10B981; }
+    .trend-same { color: var(--text-light); }
+
+    /* Checkboxes */
+    .checkbox-group { display: flex; gap: 10px; margin-bottom: 14px; }
+    .checkbox-item {
+      flex: 1; display: flex; align-items: center; gap: 8px;
+      background: var(--pink-bg); border-radius: 14px;
+      padding: 12px 12px; cursor: pointer;
+      border: 2.5px solid transparent; transition: all 0.2s;
+    }
+    .checkbox-item.active-maint    { border-color: #3B82F6; background: #EFF6FF; }
+    .checkbox-item.active-vacation { border-color: var(--purple); background: var(--purple-light); }
+    .checkbox-icon  { font-size: 20px; line-height: 1; }
+    .checkbox-label { font-size: 13px; font-weight: 800; color: var(--text); }
+    .cb-hidden      { display: none; }
+
+    .sheet-save-btn {
+      width: 100%; background: linear-gradient(135deg, var(--pink), var(--purple));
+      color: white; border: none; border-radius: 16px;
+      padding: 16px; font-family: 'Nunito', sans-serif;
+      font-weight: 900; font-size: 16px; cursor: pointer;
+      margin-top: 4px; transition: opacity 0.2s, transform 0.1s;
+    }
+    .sheet-save-btn:active { transform: scale(0.98); }
+
+    /* ── Sparkle ── */
+    .sparkle {
+      position: fixed; pointer-events: none; z-index: 999;
+      font-size: 18px; animation: sparkleAnim 0.65s ease-out forwards;
+    }
+    @keyframes sparkleAnim {
+      0%   { transform: translate(0,0) scale(1.2); opacity: 1; }
+      100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity: 0; }
+    }
+    @keyframes checkBounce {
+      0%   { transform: scale(1); }
+      30%  { transform: scale(1.4); }
+      60%  { transform: scale(0.85); }
+      80%  { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+    .bounce { animation: checkBounce 0.45s ease; }
+  </style>
+</head>
+<body>
+
+<!-- Loading -->
+<div class="loading-screen" id="loadingScreen">
+  <div class="loading-title">🌸 Mijn Kalender</div>
+  <div class="loading-dots">
+    <div class="loading-dot"></div>
+    <div class="loading-dot"></div>
+    <div class="loading-dot"></div>
+  </div>
+</div>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-top">
+    <div class="sync-status" id="syncStatus">● verbonden</div>
+  </div>
+  <div class="countdown-banner" id="countdownBanner"></div>
+  <div class="month-tabs">
+    <div class="month-tab active" onclick="switchMonth(0)">April</div>
+    <div class="month-tab"       onclick="switchMonth(1)">Mei</div>
+    <div class="month-tab"       onclick="switchMonth(2)">Juni</div>
+  </div>
+</div>
+
+<!-- Content -->
+<div class="content">
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#10B981"></div> ≤1450 kcal</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#F59E0B"></div> ≤2000 kcal</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#EF4444"></div> 2000+</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3B82F6"></div> Maintenance</div>
+    <div class="legend-item">🌴 Vakantie</div>
+  </div>
+
+  <div class="month-view active" id="month-0">
+    <div class="cal-card">
+      <div class="weekday-row" id="wd-0"></div>
+      <div class="cal-grid"    id="cal-0"></div>
+    </div>
+    <div class="section-title">🏃‍♀️ Trainingen</div>
+    <div id="train-0"></div>
+    <div class="summary-card" id="summary-0" style="display:none"></div>
+  </div>
+
+  <div class="month-view" id="month-1">
+    <div class="cal-card">
+      <div class="weekday-row" id="wd-1"></div>
+      <div class="cal-grid"    id="cal-1"></div>
+    </div>
+    <div class="section-title">🏃‍♀️ Trainingen</div>
+    <div id="train-1"></div>
+    <div class="summary-card" id="summary-1" style="display:none"></div>
+  </div>
+
+  <div class="month-view" id="month-2">
+    <div class="cal-card">
+      <div class="weekday-row" id="wd-2"></div>
+      <div class="cal-grid"    id="cal-2"></div>
+    </div>
+    <div class="section-title">🏃‍♀️ Trainingen</div>
+    <div id="train-2"></div>
+    <div class="summary-card" id="summary-2" style="display:none"></div>
+  </div>
+
+  <!-- Weight chart – altijd zichtbaar -->
+  <div class="chart-card">
+    <div class="section-title">⚖️ Gewicht april → juni</div>
+    <div id="weight-chart"></div>
+  </div>
+
+</div>
+
+<!-- Day bottom sheet -->
+<div class="overlay" id="overlay" onclick="overlayClick(event)">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title" id="sheet-title"></div>
+
+    <div class="input-group">
+      <label class="input-lbl">🔥 Calorieën gegeten</label>
+      <input class="input-field" type="number" id="inp-cal" placeholder="bijv. 1600" inputmode="numeric">
+    </div>
+
+    <div class="input-group">
+      <label class="input-lbl">⚖️ Gewicht (kg)</label>
+      <input class="input-field" type="number" id="inp-weight" placeholder="bijv. 62.0" step="0.1" inputmode="decimal">
+      <div class="weight-trend" id="weight-trend"></div>
+    </div>
+
+    <div class="checkbox-group">
+      <div class="checkbox-item" id="maint-item" onclick="toggleCheck('maint')">
+        <span class="checkbox-icon">💙</span>
+        <div class="checkbox-label">Maintenance</div>
+        <input type="checkbox" id="inp-maint" class="cb-hidden">
+      </div>
+      <div class="checkbox-item" id="vac-item" onclick="toggleCheck('vac')">
+        <span class="checkbox-icon">🌴</span>
+        <div class="checkbox-label">Vakantie</div>
+        <input type="checkbox" id="inp-vac" class="cb-hidden">
+      </div>
+    </div>
+
+    <div class="input-group">
+      <label class="input-lbl">📝 Notitie</label>
+      <input class="input-field small" type="text" id="inp-note" placeholder="Vrije notitie…" maxlength="120">
+    </div>
+
+    <button class="sheet-save-btn" onclick="saveDayData()">Opslaan ✨</button>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// SUPABASE SETUP
+//
+// Maak eerst deze tabellen aan in je Supabase SQL Editor:
+//
+//   create table if not exists days (
+//     id          bigint generated always as identity primary key,
+//     persoon     text    not null,
+//     datum       text    not null,
+//     calories    integer,
+//     weight      numeric(5,2),
+//     maintenance boolean default false,
+//     vacation    boolean default false,
+//     note        text,
+//     unique(persoon, datum)
+//   );
+//
+//   create table if not exists weeks (
+//     id          bigint generated always as identity primary key,
+//     persoon     text    not null,
+//     week_key    text    not null,
+//     trainings   jsonb,
+//     unique(persoon, week_key)
+//   );
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SUPABASE_URL = 'https://hsrjdexewsbtsvfumrft.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_-SeIdvO587-Saud1wyRUWw_b7T9jSqH';
+const PERSOON      = 'jett';
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+const MONTHS = [
+  { label: 'april', year: 2026, month: 3 },
+  { label: 'mei',   year: 2026, month: 4 },
+  { label: 'juni',  year: 2026, month: 5 }
+];
+const NL_DAYS     = ['Ma','Di','Wo','Do','Vr','Za','Zo'];
+const NL_MONTHS   = ['januari','februari','maart','april','mei','juni',
+                     'juli','augustus','september','oktober','november','december'];
+const NL_DAY_FULL = ['Zondag','Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag'];
+const RUN_DATE      = new Date('2026-05-10T00:00:00');
+const TARGET_WEIGHT = 59;
+const START_WEIGHT  = 62;
+
+const today = new Date();
+today.setHours(0,0,0,0);
+
+// ─── Data ─────────────────────────────────────────────────────────────────────
+let appData = { days: {}, weeks: {} };
+
+// ─── Sync indicator ───────────────────────────────────────────────────────────
+let _syncTimer = null;
+function setSyncStatus(state, text) {
+  const el = document.getElementById('syncStatus');
+  el.className = 'sync-status ' + state;
+  el.textContent = text;
+  clearTimeout(_syncTimer);
+  if (state === 'synced') {
+    _syncTimer = setTimeout(() => { el.className = 'sync-status'; el.textContent = '●'; }, 2500);
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function dateKey(y, m, d) {
+  return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+function mondayOf(date) {
+  const d = new Date(date); d.setHours(0,0,0,0);
+  const dow = d.getDay();
+  d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+  return d;
+}
+function weekKey(monday) {
+  return dateKey(monday.getFullYear(), monday.getMonth(), monday.getDate());
+}
+function weeksInMonth(year, month) {
+  const last = new Date(year, month + 1, 0);
+  const weeks = [];
+  let mon = mondayOf(new Date(year, month, 1));
+  while (mon <= last) { weeks.push(new Date(mon)); mon = new Date(mon); mon.setDate(mon.getDate() + 7); }
+  return weeks;
+}
+function weekLabel(monday, year, month) {
+  const sun = new Date(monday); sun.setDate(sun.getDate() + 6);
+  const lastD = new Date(year, month + 1, 0).getDate();
+  const s = monday.getMonth() !== month ? 1 : monday.getDate();
+  const e = sun.getMonth()   !== month ? lastD : sun.getDate();
+  return `${s} – ${e} ${NL_MONTHS[month]}`;
+}
+function keyToDate(key) {
+  const [y,m,d] = key.split('-').map(Number);
+  return new Date(y, m-1, d);
+}
+
+// ─── Active training week per month ──────────────────────────────────────────
+let _activeWeekKeys = [null, null, null];
+
+function initActiveWeeks() {
+  MONTHS.forEach((cfg, idx) => {
+    const weeks = weeksInMonth(cfg.year, cfg.month);
+    const todayWk = weekKey(mondayOf(today));
+    const match = weeks.find(m => weekKey(m) === todayWk);
+    _activeWeekKeys[idx] = weekKey(match || weeks[0]);
+  });
+}
+
+// ─── Calendar colour ──────────────────────────────────────────────────────────
+function dayColorClass(data) {
+  if (!data) return '';
+  if (data.vacation) return 'day-vacation';
+  if (data.maintenance) return 'day-blue';
+  if (data.calories != null) {
+    if (data.calories <= 1450) return 'day-green';
+    if (data.calories <= 2000) return 'day-orange';
+    return 'day-red';
+  }
+  return '';
+}
+
+// ─── Render calendar ──────────────────────────────────────────────────────────
+function renderCalendar(idx) {
+  const cfg  = MONTHS[idx];
+  const wdEl = document.getElementById(`wd-${idx}`);
+  const grid = document.getElementById(`cal-${idx}`);
+
+  wdEl.innerHTML = '';
+  NL_DAYS.forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'weekday-lbl'; el.textContent = d; wdEl.appendChild(el);
+  });
+
+  grid.innerHTML = '';
+  const firstDay = new Date(cfg.year, cfg.month, 1);
+  const lastDay  = new Date(cfg.year, cfg.month + 1, 0);
+  const offset   = (firstDay.getDay() + 6) % 7;
+
+  for (let i = 0; i < offset; i++) {
+    const el = document.createElement('div'); el.className = 'cal-day empty'; grid.appendChild(el);
+  }
+
+  for (let d = 1; d <= lastDay.getDate(); d++) {
+    const key     = dateKey(cfg.year, cfg.month, d);
+    const data    = appData.days[key];
+    const isToday = new Date(cfg.year, cfg.month, d).getTime() === today.getTime();
+
+    const el = document.createElement('div');
+    el.className = 'cal-day';
+    const cc = dayColorClass(data);
+    if (cc) el.classList.add(cc);
+    if (isToday) el.classList.add('today');
+
+    let icon = '';
+    if (data?.vacation) {
+      icon = `<div class="day-icon">🌴</div>`;
+    } else if (data?.maintenance) {
+      icon = `<div class="day-icon" style="font-size:7px;font-weight:900;color:#3B82F6">M</div>`;
+    } else {
+      const w = isToday;
+      const dc = data?.calories != null ? `<div class="day-dot ${w?'dot-white':'dot-cal'}"></div>` : '';
+      const dw = data?.weight   != null ? `<div class="day-dot ${w?'dot-white':'dot-weight'}"></div>` : '';
+      if (dc||dw) icon = `<div class="day-dots">${dc}${dw}</div>`;
+    }
+
+    el.innerHTML = `<span class="day-num">${d}</span>${icon}`;
+    el.onclick = () => openSheet(key, cfg, idx);
+    grid.appendChild(el);
+  }
+}
+
+// ─── Render trainings ─────────────────────────────────────────────────────────
+const _tDebounce = {};
+
+function renderTrainings(idx) {
+  const cfg   = MONTHS[idx];
+  const con   = document.getElementById(`train-${idx}`);
+  con.innerHTML = '';
+
+  const wk     = _activeWeekKeys[idx];
+  const monday = keyToDate(wk);
+  const weeks  = weeksInMonth(cfg.year, cfg.month);
+  const curI   = weeks.findIndex(w => weekKey(w) === wk);
+  const hasPrev = curI > 0;
+  const hasNext = curI < weeks.length - 1;
+
+  if (!appData.weeks[wk]) {
+    appData.weeks[wk] = { trainings: [{name:'',done:false},{name:'',done:false},{name:'',done:false}] };
+  }
+  const wd   = appData.weeks[wk];
+  const done = wd.trainings.filter(t => t.done).length;
+
+  const card = document.createElement('div'); card.className = 'week-card';
+  card.innerHTML = `<div class="week-header">
+    <button class="week-nav" onclick="stepWeek(${idx},-1)" ${hasPrev?'':'disabled'}>‹</button>
+    <div class="week-lbl">📅 ${weekLabel(monday, cfg.year, cfg.month)}</div>
+    <div style="display:flex;align-items:center;gap:8px">
+      ${done > 0 ? `<div class="week-progress">${done}/3 ✓</div>` : ''}
+      <button class="week-nav" onclick="stepWeek(${idx},1)" ${hasNext?'':'disabled'}>›</button>
+    </div>
+  </div>`;
+
+  wd.trainings.forEach((t, i) => {
+    const item = document.createElement('div');
+    item.className = 'training-item' + (t.done ? ' done' : '');
+
+    const chk = document.createElement('div');
+    chk.className = 't-check'; chk.innerHTML = t.done ? '✓' : '';
+    chk.onclick = () => toggleTraining(wk, i, chk, item, idx);
+
+    const inp = document.createElement('input');
+    inp.className = 't-name'; inp.type = 'text';
+    inp.value = t.name; inp.placeholder = `Training ${i+1}…`;
+    inp.oninput = () => {
+      appData.weeks[wk].trainings[i].name = inp.value;
+      clearTimeout(_tDebounce[wk]);
+      _tDebounce[wk] = setTimeout(() => saveWeek(wk), 900);
+    };
+
+    item.appendChild(chk); item.appendChild(inp); card.appendChild(item);
+  });
+  con.appendChild(card);
+}
+
+function stepWeek(idx, dir) {
+  const cfg   = MONTHS[idx];
+  const weeks = weeksInMonth(cfg.year, cfg.month);
+  const curI  = weeks.findIndex(w => weekKey(w) === _activeWeekKeys[idx]);
+  const newI  = curI + dir;
+  if (newI >= 0 && newI < weeks.length) {
+    _activeWeekKeys[idx] = weekKey(weeks[newI]);
+    renderTrainings(idx);
+  }
+}
+
+function toggleTraining(wk, i, chkEl, itemEl, mIdx) {
+  const t = appData.weeks[wk].trainings[i];
+  t.done = !t.done;
+  if (t.done) {
+    itemEl.classList.add('done'); chkEl.innerHTML = '✓';
+    chkEl.classList.add('bounce'); setTimeout(() => chkEl.classList.remove('bounce'), 500);
+    spawnSparkles(chkEl);
+    setTimeout(() => renderTrainings(mIdx), 700);
+  } else {
+    itemEl.classList.remove('done'); chkEl.innerHTML = '';
+    setTimeout(() => renderTrainings(mIdx), 50);
+  }
+  renderMonthSummary(mIdx);
+  saveWeek(wk);
+}
+
+// ─── Month summary ────────────────────────────────────────────────────────────
+function computeCurrentStreak() {
+  let streak = 0;
+  const d = new Date(today);
+  const todayK = dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+  if (!appData.days[todayK]?.calories) d.setDate(d.getDate() - 1);
+  for (let safety = 0; safety < 300; safety++) {
+    const k = dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+    if (appData.days[k]?.calories != null) { streak++; d.setDate(d.getDate() - 1); }
+    else break;
+  }
+  return streak;
+}
+
+function renderMonthSummary(idx) {
+  const cfg = MONTHS[idx];
+  const el  = document.getElementById(`summary-${idx}`);
+  if (!el) return;
+
+  const lastDay = new Date(cfg.year, cfg.month + 1, 0).getDate();
+  let green = 0, orange = 0, red = 0, totalCal = 0, calDays = 0;
+
+  for (let d = 1; d <= lastDay; d++) {
+    const data = appData.days[dateKey(cfg.year, cfg.month, d)];
+    if (data?.calories != null) {
+      calDays++; totalCal += data.calories;
+      if (!data.maintenance) {
+        if (data.calories <= 1450) green++;
+        else if (data.calories <= 2000) orange++;
+        else red++;
+      }
+    }
+  }
+
+  const weeks = weeksInMonth(cfg.year, cfg.month);
+  let trainDone = 0;
+  weeks.forEach(m => {
+    const wk = weekKey(m);
+    if (appData.weeks[wk]) trainDone += appData.weeks[wk].trainings.filter(t => t.done).length;
+  });
+  const trainTotal = weeks.length * 3;
+  const avgCal  = calDays > 0 ? Math.round(totalCal / calDays) : null;
+  const streak  = computeCurrentStreak();
+
+  if (calDays === 0 && trainDone === 0) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+
+  el.innerHTML = `
+    <div class="section-title" style="margin-bottom:12px">📊 Maandoverzicht ${cfg.label}</div>
+    <div class="summary-grid">
+      <div class="summary-stat">
+        <div class="summary-stat-value">🔥 ${streak}</div>
+        <div class="summary-stat-label">Huidige streak</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-value">${avgCal != null ? avgCal+' kcal' : '—'}</div>
+        <div class="summary-stat-label">Gem. calorieën</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-value">${trainDone}/${trainTotal}</div>
+        <div class="summary-stat-label">Trainingen</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-value">${calDays}</div>
+        <div class="summary-stat-label">Dagen ingevuld</div>
+      </div>
+    </div>
+    ${(green||orange||red) ? `
+    <div class="summary-dist">
+      ${green  ? `<div class="dist-item"><div class="dist-dot" style="background:#10B981"></div>${green} groen</div>` : ''}
+      ${orange ? `<div class="dist-item"><div class="dist-dot" style="background:#F59E0B"></div>${orange} oranje</div>` : ''}
+      ${red    ? `<div class="dist-item"><div class="dist-dot" style="background:#EF4444"></div>${red} rood</div>` : ''}
+    </div>` : ''}
+  `;
+}
+
+// ─── Weight chart ─────────────────────────────────────────────────────────────
+function renderWeightChart() {
+  const con = document.getElementById('weight-chart');
+
+  const allDays = [];
+  MONTHS.forEach(cfg => {
+    const last = new Date(cfg.year, cfg.month + 1, 0).getDate();
+    for (let d = 1; d <= last; d++) allDays.push(dateKey(cfg.year, cfg.month, d));
+  });
+
+  const pts = allDays
+    .map((key, i) => ({ i, key, w: appData.days[key]?.weight ?? null }))
+    .filter(p => p.w != null);
+
+  if (pts.length === 0) {
+    con.innerHTML = '<div class="chart-empty">Nog geen gewichtsmetingen —<br>tik op een dag om gewicht in te vullen ⚖️</div>';
+    return;
+  }
+
+  const W=330, H=120, PL=34, PR=10, PT=12, PB=24;
+  const cw=W-PL-PR, ch=H-PT-PB, total=allDays.length;
+
+  const ws = pts.map(p => p.w);
+  const minW = Math.min(...ws, TARGET_WEIGHT) - 0.8;
+  const maxW = Math.max(...ws, START_WEIGHT)  + 0.8;
+
+  const xOf = i => PL + (i / (total-1)) * cw;
+  const yOf = w => PT + (1 - (w-minW)/(maxW-minW)) * ch;
+
+  const path = pts.map((p,i) => `${i===0?'M':'L'}${xOf(p.i).toFixed(1)},${yOf(p.w).toFixed(1)}`).join(' ');
+  const ty = yOf(TARGET_WEIGHT).toFixed(1);
+
+  // Month separators
+  const xMay  = xOf(30).toFixed(1);
+  const xJune = xOf(61).toFixed(1);
+
+  // Y labels (integer kg values within range)
+  const yLbls = [];
+  for (let w=Math.ceil(minW); w<=Math.floor(maxW); w++) yLbls.push(w);
+
+  // Today line
+  const todayIdx = allDays.findIndex(k => k === dateKey(today.getFullYear(), today.getMonth(), today.getDate()));
+  const todayLine = todayIdx >= 0
+    ? `<line x1="${xOf(todayIdx).toFixed(1)}" y1="${PT}" x2="${xOf(todayIdx).toFixed(1)}" y2="${PT+ch}" stroke="#F472B6" stroke-width="1.5" opacity="0.35"/>`
+    : '';
+
+  con.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;overflow:visible;display:block">
+      ${yLbls.map(w => `
+        <line x1="${PL}" y1="${yOf(w).toFixed(1)}" x2="${W-PR}" y2="${yOf(w).toFixed(1)}" stroke="#F3F4F6" stroke-width="1"/>
+        <text x="${PL-5}" y="${(yOf(w)+3.5).toFixed(1)}" font-size="9" fill="#9CA3AF" text-anchor="end" font-family="Nunito,sans-serif">${w}</text>
+      `).join('')}
+      <line x1="${xMay}"  y1="${PT}" x2="${xMay}"  y2="${PT+ch}" stroke="#E5E7EB" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="${xJune}" y1="${PT}" x2="${xJune}" y2="${PT+ch}" stroke="#E5E7EB" stroke-width="1" stroke-dasharray="3,3"/>
+      <text x="${xOf(15).toFixed(1)}"  y="${H-6}" font-size="10" fill="#9CA3AF" text-anchor="middle" font-family="Nunito,sans-serif" font-weight="700">april</text>
+      <text x="${xOf(45).toFixed(1)}"  y="${H-6}" font-size="10" fill="#9CA3AF" text-anchor="middle" font-family="Nunito,sans-serif" font-weight="700">mei</text>
+      <text x="${xOf(76).toFixed(1)}"  y="${H-6}" font-size="10" fill="#9CA3AF" text-anchor="middle" font-family="Nunito,sans-serif" font-weight="700">juni</text>
+      <line x1="${PL}" y1="${ty}" x2="${W-PR}" y2="${ty}" stroke="#A78BFA" stroke-width="1.5" stroke-dasharray="5,4" opacity="0.85"/>
+      <text x="${PL-5}" y="${(parseFloat(ty)+3.5).toFixed(1)}" font-size="9" fill="#A78BFA" text-anchor="end" font-family="Nunito,sans-serif" font-weight="800">${TARGET_WEIGHT}</text>
+      ${todayLine}
+      <path d="${path}" fill="none" stroke="#F472B6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${pts.map(p => `<circle cx="${xOf(p.i).toFixed(1)}" cy="${yOf(p.w).toFixed(1)}" r="3.5" fill="white" stroke="#F472B6" stroke-width="2"/>`).join('')}
+    </svg>
+    <div class="chart-legend">
+      <div class="chart-legend-item">
+        <svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke="#F472B6" stroke-width="2.5"/></svg>
+        Gewicht
+      </div>
+      <div class="chart-legend-item">
+        <svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke="#A78BFA" stroke-width="1.5" stroke-dasharray="5,4"/></svg>
+        Doel (${TARGET_WEIGHT} kg)
+      </div>
+    </div>
+  `;
+}
+
+// ─── Countdown ────────────────────────────────────────────────────────────────
+function renderCountdown() {
+  const el  = document.getElementById('countdownBanner');
+  const run = new Date(RUN_DATE); run.setHours(0,0,0,0);
+  const diffRun = Math.round((run - today) / 86400000);
+
+  const runTxt = diffRun > 0
+    ? `nog ${diffRun} dag${diffRun===1?'':'en'} tot je 5km run 🏁`
+    : diffRun === 0
+      ? `vandaag is je 5km run! 🎉`
+      : `5km run ${Math.abs(diffRun)} dag${Math.abs(diffRun)===1?'':'en'} geleden 🎽`;
+
+  // Eerste vakantiedag = eerste dag met vacation:true in de kalender
+  const firstVacKey = Object.keys(appData.days)
+    .filter(k => appData.days[k]?.vacation)
+    .sort()[0];
+
+  if (!firstVacKey) {
+    el.textContent = `Jett, ${runTxt}`;
+    return;
+  }
+
+  const vac = keyToDate(firstVacKey); vac.setHours(0,0,0,0);
+  const diffVac = Math.round((vac - today) / 86400000);
+  const vacTxt = diffVac > 0
+    ? `nog ${diffVac} dag${diffVac===1?'':'en'} tot je vakantie 🌴`
+    : diffVac === 0
+      ? `vandaag begint je vakantie! 🌴`
+      : `vakantie is begonnen! 🌴`;
+
+  el.textContent = `Jett, ${runTxt} en ${vacTxt}`;
+}
+
+// ─── Sparkles ─────────────────────────────────────────────────────────────────
+function spawnSparkles(el) {
+  const r = el.getBoundingClientRect();
+  const cx = r.left + r.width/2, cy = r.top + r.height/2;
+  const bits = ['✨','🌟','💫','⭐','🌸','💖','🎀'];
+  for (let i=0; i<9; i++) {
+    const s = document.createElement('div'); s.className = 'sparkle';
+    s.textContent = bits[Math.floor(Math.random()*bits.length)];
+    s.style.left = cx+'px'; s.style.top = cy+'px';
+    s.style.fontSize = (Math.random()*10+12)+'px';
+    const a = (i/9)*Math.PI*2 + Math.random()*0.4;
+    const dist = Math.random()*55+35;
+    s.style.setProperty('--tx', Math.cos(a)*dist+'px');
+    s.style.setProperty('--ty', Math.sin(a)*dist+'px');
+    document.body.appendChild(s); setTimeout(() => s.remove(), 700);
+  }
+}
+
+// ─── Bottom sheet ─────────────────────────────────────────────────────────────
+let _currentKey = null, _currentIdx = null;
+
+function toggleCheck(type) {
+  const inp  = document.getElementById(`inp-${type}`);
+  const item = document.getElementById(`${type}-item`);
+  inp.checked = !inp.checked;
+  if (type === 'maint') item.classList.toggle('active-maint', inp.checked);
+  else                  item.classList.toggle('active-vacation', inp.checked);
+}
+
+function weightTrendHTML(key) {
+  const [y,m,d] = key.split('-').map(Number);
+  const cur = new Date(y, m-1, d);
+  const curW = appData.days[key]?.weight ?? null;
+
+  const prev = Object.keys(appData.days)
+    .filter(k => {
+      const [ky,km,kd] = k.split('-').map(Number);
+      return new Date(ky,km-1,kd) < cur && appData.days[k]?.weight != null;
+    })
+    .sort().pop();
+
+  if (!prev) return '';
+  const prevW = appData.days[prev].weight;
+  if (curW == null) return `<span class="trend-same">Vorige meting: ${prevW} kg</span>`;
+  const diff = parseFloat((curW - prevW).toFixed(1));
+  if (Math.abs(diff) < 0.05) return `<span class="trend-same">↔ gelijk aan ${prevW} kg</span>`;
+  if (diff > 0) return `<span class="trend-up">↑ +${diff} kg t.o.v. ${prevW} kg</span>`;
+  return `<span class="trend-down">↓ ${diff} kg t.o.v. ${prevW} kg</span>`;
+}
+
+function openSheet(key, cfg, idx) {
+  _currentKey = key; _currentIdx = idx;
+  const [y,m,d] = key.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+
+  // Zet actieve trainingsweek op de week van de getapte dag
+  const newWk = weekKey(mondayOf(dt));
+  const weeksThisMonth = weeksInMonth(cfg.year, cfg.month);
+  if (weeksThisMonth.some(w => weekKey(w) === newWk)) {
+    if (_activeWeekKeys[idx] !== newWk) {
+      _activeWeekKeys[idx] = newWk;
+      renderTrainings(idx);
+    }
+  }
+  document.getElementById('sheet-title').textContent =
+    `${NL_DAY_FULL[dt.getDay()]} ${d} ${NL_MONTHS[m-1]}`;
+
+  const data = appData.days[key] || {};
+  document.getElementById('inp-cal').value    = data.calories ?? '';
+  document.getElementById('inp-weight').value = data.weight   ?? '';
+  document.getElementById('inp-note').value   = data.note     ?? '';
+
+  const maint = !!data.maintenance, vac = !!data.vacation;
+  document.getElementById('inp-maint').checked = maint;
+  document.getElementById('inp-vac').checked   = vac;
+  document.getElementById('maint-item').classList.toggle('active-maint',    maint);
+  document.getElementById('vac-item').classList.toggle('active-vacation', vac);
+  document.getElementById('weight-trend').innerHTML = weightTrendHTML(key);
+
+  document.getElementById('overlay').classList.add('open');
+  setTimeout(() => document.getElementById('inp-cal').focus(), 350);
+}
+
+function overlayClick(e) {
+  if (e.target === document.getElementById('overlay'))
+    document.getElementById('overlay').classList.remove('open');
+}
+
+function saveDayData() {
+  const cal   = document.getElementById('inp-cal').value;
+  const wt    = document.getElementById('inp-weight').value;
+  const maint = document.getElementById('inp-maint').checked;
+  const vac   = document.getElementById('inp-vac').checked;
+  const note  = document.getElementById('inp-note').value.trim();
+
+  if (cal || wt || maint || vac || note) {
+    appData.days[_currentKey] = {
+      calories:    cal  ? parseInt(cal)     : null,
+      weight:      wt   ? parseFloat(wt)    : null,
+      maintenance: maint,
+      vacation:    vac,
+      note:        note || null
+    };
+  } else {
+    delete appData.days[_currentKey];
+  }
+
+  document.getElementById('overlay').classList.remove('open');
+  renderCalendar(_currentIdx);
+  renderMonthSummary(_currentIdx);
+  renderWeightChart();
+  renderCountdown();
+  saveDay(_currentKey);
+}
+
+// ─── Month switch ─────────────────────────────────────────────────────────────
+function switchMonth(idx) {
+  document.querySelectorAll('.month-tab').forEach((t,i)  => t.classList.toggle('active', i===idx));
+  document.querySelectorAll('.month-view').forEach((v,i) => v.classList.toggle('active', i===idx));
+}
+
+// ─── Supabase: load ───────────────────────────────────────────────────────────
+async function loadData() {
+  setSyncStatus('syncing', '⟳ laden…');
+  try {
+    const [dRes, wRes] = await Promise.all([
+      sb.from('days').select('*').eq('persoon', PERSOON),
+      sb.from('weeks').select('*').eq('persoon', PERSOON)
+    ]);
+    if (dRes.error) throw dRes.error;
+    if (wRes.error) throw wRes.error;
+
+    (dRes.data || []).forEach(r => {
+      appData.days[r.datum] = {
+        calories:    r.calories,
+        weight:      r.weight != null ? parseFloat(r.weight) : null,
+        maintenance: !!r.maintenance,
+        vacation:    !!r.vacation,
+        note:        r.note || null
+      };
+    });
+    (wRes.data || []).forEach(r => {
+      appData.weeks[r.week_key] = { trainings: r.trainings };
+    });
+    setSyncStatus('synced', '✓ geladen');
+  } catch (err) {
+    console.error('Load error:', err);
+    setSyncStatus('error', '✗ laden mislukt');
+  }
+}
+
+// ─── Supabase: save day ───────────────────────────────────────────────────────
+async function saveDay(key) {
+  setSyncStatus('syncing', '⟳ opslaan…');
+  try {
+    const data = appData.days[key];
+    if (data) {
+      const { error } = await sb.from('days').upsert(
+        { persoon: PERSOON, datum: key, calories: data.calories, weight: data.weight,
+          maintenance: data.maintenance, vacation: data.vacation, note: data.note },
+        { onConflict: 'persoon,datum' }
+      );
+      if (error) throw error;
+    } else {
+      const { error } = await sb.from('days').delete().eq('persoon', PERSOON).eq('datum', key);
+      if (error) throw error;
+    }
+    setSyncStatus('synced', '✓ opgeslagen');
+  } catch (err) {
+    console.error('Save day error:', err);
+    setSyncStatus('error', '✗ opslaan mislukt');
+  }
+}
+
+// ─── Supabase: save week ──────────────────────────────────────────────────────
+async function saveWeek(wk) {
+  setSyncStatus('syncing', '⟳ opslaan…');
+  try {
+    const { error } = await sb.from('weeks').upsert(
+      { persoon: PERSOON, week_key: wk, trainings: appData.weeks[wk].trainings },
+      { onConflict: 'persoon,week_key' }
+    );
+    if (error) throw error;
+    setSyncStatus('synced', '✓ opgeslagen');
+  } catch (err) {
+    console.error('Save week error:', err);
+    setSyncStatus('error', '✗ opslaan mislukt');
+  }
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+(async function init() {
+  await loadData();
+  initActiveWeeks();
+  MONTHS.forEach((_, i) => {
+    renderCalendar(i);
+    renderTrainings(i);
+    renderMonthSummary(i);
+  });
+  renderWeightChart();
+  renderCountdown();
+  switchMonth(0);
+  document.getElementById('loadingScreen').style.display = 'none';
+})();
+</script>
+</body>
+</html>
